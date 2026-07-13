@@ -9,4 +9,14 @@
 <section id="settings" class="view"><div class="topline"><h2>设置与数据</h2></div><div class="panel"><h3>茶类管理</h3><div id="categoryList" class="taglist"></div><div class="inline"><input id="newCategory" placeholder="新增茶类"><button id="addCategoryBtn" class="ghost">添加</button></div></div><div class="panel"><h3>数据管理</h3><button id="exportAllBtn" class="ghost block">导出全部 CSV</button><button id="backupBtn" class="ghost block">备份全部数据（JSON）</button><label class="ghost block fileBtn">恢复备份<input id="restoreInput" type="file" accept="application/json"></label><button id="clearBtn" class="danger block">清空全部数据</button></div><div class="panel"><h3>安装到 iPhone 桌面</h3><p>请用 Safari 打开本网页，点击底部“分享”按钮，再选择“添加到主屏幕”。</p></div></section>
 </main>
 <nav><button data-go="home" class="active">首页</button><button data-go="history">历史</button><button data-go="settings">设置</button></nav>
+
+<div id="compareModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="compareTitle">
+  <div class="modalCard">
+    <div class="modalHead"><div><small>保存成功</small><h2 id="compareTitle">我 vs 他人 品评对照</h2></div><button id="closeCompareBtn" class="modalClose" type="button">×</button></div>
+    <section class="compareSection"><h3>香气</h3><div class="compareGrid"><div><span class="compareLabel">共同品出</span><div id="commonAroma" class="resultTags"></div></div><div><span class="compareLabel missingLabel">我没有品出</span><div id="missingAroma" class="resultTags"></div></div></div></section>
+    <section class="compareSection"><h3>滋味</h3><div class="compareGrid"><div><span class="compareLabel">共同品出</span><div id="commonTaste" class="resultTags"></div></div><div><span class="compareLabel missingLabel">我没有品出</span><div id="missingTaste" class="resultTags"></div></div></div></section>
+    <p class="compareTip">“我没有品出”指他人记录中出现、但我的记录中未匹配到的关键词。</p>
+    <button id="compareDoneBtn" class="primary block" type="button">完成并返回批次</button>
+  </div>
+</div>
 <script src="app.js"></script></body></html>
