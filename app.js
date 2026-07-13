@@ -14,57 +14,133 @@ function normalizeTerm(v=''){const map={'蜂蜜香':'蜜香','蜜糖香':'蜜香
 function extractTerms(text,type){const vocab=[...TERMS[type],...(type==='aroma'?['花果香','兰花香','玫瑰香','熟果香','柑橘香','松烟香','陈香','火香','烘焙香','青气','陈气','酸馊气']:['甘甜','甜润','收敛感','鲜甜','鲜醇','饱满','柔和','爽口','浓强','淡薄','粗涩','酸','咸'])];const raw=String(text||'').replace(/[。！？!?：:\n]/g,'、');const found=[];for(const term of vocab){if(raw.includes(term))found.push(normalizeTerm(term))}for(const part of raw.split(/[，,、；;\/|\s]+/)){const n=normalizeTerm(part);if(n&&n.length<=8&&!/^(香气|滋味|口感|汤感|明显|一般|无|没有)$/.test(n))found.push(n)}return [...new Set(found)]}
 function compareFields(mine,other,type){const m=extractTerms(mine,type),o=extractTerms(other,type);return {common:m.filter(x=>o.includes(x)),missing:o.filter(x=>!m.includes(x))}}
 
-// V1.2 特征点优化版
-// 统计规则：
-// 1. 换行、分号、句号等分隔符可用于区分多条意见。
-// 2. 同一条意见中的同一术语只统计一次，避免重复输入抬高频率。
-// 3. 存在重复术语时，显示所有并列最高频术语，不限制数量。
-// 4. 所有术语都只出现一次时，显示全部去重后的提示词，不只显示第一个。
-// 5. 与“我的品评”相同显示绿色，否则显示红色。
+// V1.2 全意见凝练版
+// 规则：
+// 1. 香气与滋味分开分析。
+// 2. 有重复术语时，显示所有并列最高频术语。
+// 3. 所有术语频率都为1时，不只显示第一个，而是基于全部意见进行凝练。
+// 4. 凝练会统一同义词、去掉重复和被更具体词包含的泛化词。
+// 5. 与“我的品评”一致显示绿色，否则显示红色。
 function splitOpinionTexts(text=''){
   return String(text||'')
     .split(/[\n；;。！？!?]+/)
     .map(x=>x.trim())
     .filter(Boolean);
 }
+
+const featureSynonyms={
+  '蜜糖香':'蜜香','蜂蜜香':'蜜香','蜂蜜味':'蜜香',
+  '桂圆味':'桂圆香','龙眼香':'桂圆香','龙眼味':'桂圆香',
+  '木质香':'木香','木头香':'木香',
+  '焦糖味':'焦糖香','焦香味':'焦香',
+  '果味':'果香','花味':'花香',
+  '甜润':'甜醇','入口甜':'甜醇','甜味':'甜醇',
+  '清爽':'鲜爽','鲜活':'鲜爽',
+  '涩感':'涩','收敛感':'涩',
+  '苦味':'苦','酸味':'酸',
+  '回甜':'回甘'
+};
+
+function normalizeFeatureTerm(term){
+  const raw=String(term||'').trim();
+  if(!raw) return '';
+  return featureSynonyms[raw]||raw;
+}
+
+// 以全部提示词为基础凝练：
+// - 同义词归一
+// - 去重
+// - 若存在“花果香”等更具体复合词，避免同时保留完全被其涵盖的“花香/果香”
+// - 保留所有互不重复、互不包含的代表词，而不是只取第一个
+function condenseAllTerms(terms){
+  const normalized=[];
+  const seen=new Set();
+
+  terms.forEach(term=>{
+    const t=normalizeFeatureTerm(term);
+    if(t&&!seen.has(t)){
+      seen.add(t);
+      normalized.push(t);
+    }
+  });
+
+  const compounds=[
+    ['花果香',['花香','果香']],
+    ['蜜果香',['蜜香','果香']],
+    ['甜花香',['甜香','花香']],
+    ['烟熏香',['烟香','熏香']]
+  ];
+
+  const result=[...normalized];
+  compounds.forEach(([compound,parts])=>{
+    if(result.includes(compound)){
+      parts.forEach(part=>{
+        const i=result.indexOf(part);
+        if(i>=0) result.splice(i,1);
+      });
+    }
+  });
+
+  return result;
+}
+
 function consensusFeature(texts,type){
   const counts=new Map();
   const firstOrder=new Map();
   let order=0;
-  const opinions=[];
+  const allTerms=[];
 
   texts.forEach(text=>{
-    const parts=splitOpinionTexts(text);
-    if(parts.length) opinions.push(...parts);
-  });
-
-  opinions.forEach(opinion=>{
-    const terms=[...new Set(extractTerms(opinion,type))];
-    terms.forEach(term=>{
-      if(!firstOrder.has(term)) firstOrder.set(term,order++);
-      counts.set(term,(counts.get(term)||0)+1);
+    const opinions=splitOpinionTexts(text);
+    opinions.forEach(opinion=>{
+      const terms=[...new Set(extractTerms(opinion,type).map(normalizeFeatureTerm).filter(Boolean))];
+      terms.forEach(term=>{
+        allTerms.push(term);
+        if(!firstOrder.has(term)) firstOrder.set(term,order++);
+        counts.set(term,(counts.get(term)||0)+1);
+      });
     });
   });
 
-  const all=[...counts.entries()]
+  if(!counts.size) return [];
+
+  const ranked=[...counts.entries()]
     .map(([term,count])=>({term,count,order:firstOrder.get(term)}))
     .sort((a,b)=>b.count-a.count||a.order-b.order);
 
-  if(!all.length) return [];
+  const max=ranked[0].count;
 
-  const max=all[0].count;
+  // 存在真正的高频词：显示全部并列最高频词
   if(max>1){
-    return all.filter(x=>x.count===max).map(x=>x.term);
+    return ranked
+      .filter(x=>x.count===max)
+      .sort((a,b)=>a.order-b.order)
+      .map(x=>x.term);
   }
 
-  return all.sort((a,b)=>a.order-b.order).map(x=>x.term);
+  // 没有重复词：使用全部提示词凝练，而不是只显示第一个
+  return condenseAllTerms(allTerms);
 }
+
+function myFeatureSet(myText,type){
+  return new Set(
+    extractTerms(myText,type)
+      .map(normalizeFeatureTerm)
+      .filter(Boolean)
+  );
+}
+
 function featureColor(term,myText,type){
-  return extractTerms(myText,type).includes(term)?'featureMatch':'featureMiss';
+  return myFeatureSet(myText,type).has(normalizeFeatureTerm(term))
+    ?'featureMatch'
+    :'featureMiss';
 }
+
 function featureTags(terms,myText,type){
   if(!terms.length) return '<span class="featureEmpty">暂无</span>';
-  return terms.map(t=>`<span class="featureTag ${featureColor(t,myText,type)}">${esc(t)}</span>`).join('');
+  return terms
+    .map(t=>`<span class="featureTag ${featureColor(t,myText,type)}">${esc(t)}</span>`)
+    .join('');
 }
 
 function renderResultTags(id,items,missing=false){const el=$('#'+id);el.innerHTML=items.length?items.map(x=>`<span class="resultTag${missing?' missing':''}">${esc(x)}</span>`).join(''):'<span class="resultEmpty">无</span>'}

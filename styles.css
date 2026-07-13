@@ -4,7 +4,7 @@
 
 .featureTitle{line-height:1.8;font-size:14px;font-weight:600}.featureMatch{color:#228b22;margin-right:6px}.featureMiss{color:#d62828;margin-right:6px}
 
-/* V1.2 特征点优化版 */
+/* V1.2 全意见凝练版 */
 .featureTitle{
   display:flex;
   align-items:flex-start;
@@ -17,12 +17,13 @@
 }
 .featureTag{
   display:inline-block;
+  max-width:100%;
   padding:2px 7px;
   border-radius:999px;
   margin:0;
   font-weight:700;
   line-height:1.55;
-  word-break:break-all;
+  overflow-wrap:anywhere;
 }
 .featureTag.featureMatch{
   color:#21863a;
