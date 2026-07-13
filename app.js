@@ -14,25 +14,57 @@ function normalizeTerm(v=''){const map={'蜂蜜香':'蜜香','蜜糖香':'蜜香
 function extractTerms(text,type){const vocab=[...TERMS[type],...(type==='aroma'?['花果香','兰花香','玫瑰香','熟果香','柑橘香','松烟香','陈香','火香','烘焙香','青气','陈气','酸馊气']:['甘甜','甜润','收敛感','鲜甜','鲜醇','饱满','柔和','爽口','浓强','淡薄','粗涩','酸','咸'])];const raw=String(text||'').replace(/[。！？!?：:\n]/g,'、');const found=[];for(const term of vocab){if(raw.includes(term))found.push(normalizeTerm(term))}for(const part of raw.split(/[，,、；;\/|\s]+/)){const n=normalizeTerm(part);if(n&&n.length<=8&&!/^(香气|滋味|口感|汤感|明显|一般|无|没有)$/.test(n))found.push(n)}return [...new Set(found)]}
 function compareFields(mine,other,type){const m=extractTerms(mine,type),o=extractTerms(other,type);return {common:m.filter(x=>o.includes(x)),missing:o.filter(x=>!m.includes(x))}}
 
-// V1.2 样品特征点分析
+// V1.2 特征点优化版
+// 统计规则：
+// 1. 换行、分号、句号等分隔符可用于区分多条意见。
+// 2. 同一条意见中的同一术语只统计一次，避免重复输入抬高频率。
+// 3. 存在重复术语时，显示所有并列最高频术语，不限制数量。
+// 4. 所有术语都只出现一次时，显示全部去重后的提示词，不只显示第一个。
+// 5. 与“我的品评”相同显示绿色，否则显示红色。
+function splitOpinionTexts(text=''){
+  return String(text||'')
+    .split(/[\n；;。！？!?]+/)
+    .map(x=>x.trim())
+    .filter(Boolean);
+}
 function consensusFeature(texts,type){
-  const counts={}, order=[];
-  texts.forEach(t=>{
-    extractTerms(t,type).forEach(term=>{
-      if(!counts[term]){counts[term]=0;order.push(term);}
-      counts[term]++;
+  const counts=new Map();
+  const firstOrder=new Map();
+  let order=0;
+  const opinions=[];
+
+  texts.forEach(text=>{
+    const parts=splitOpinionTexts(text);
+    if(parts.length) opinions.push(...parts);
+  });
+
+  opinions.forEach(opinion=>{
+    const terms=[...new Set(extractTerms(opinion,type))];
+    terms.forEach(term=>{
+      if(!firstOrder.has(term)) firstOrder.set(term,order++);
+      counts.set(term,(counts.get(term)||0)+1);
     });
   });
-  let max=Math.max(0,...Object.values(counts));
-  let result=Object.keys(counts).filter(k=>counts[k]===max);
-  if(!result.length) result=order.slice(0,2);
-  return result.slice(0,3);
+
+  const all=[...counts.entries()]
+    .map(([term,count])=>({term,count,order:firstOrder.get(term)}))
+    .sort((a,b)=>b.count-a.count||a.order-b.order);
+
+  if(!all.length) return [];
+
+  const max=all[0].count;
+  if(max>1){
+    return all.filter(x=>x.count===max).map(x=>x.term);
+  }
+
+  return all.sort((a,b)=>a.order-b.order).map(x=>x.term);
 }
 function featureColor(term,myText,type){
   return extractTerms(myText,type).includes(term)?'featureMatch':'featureMiss';
 }
 function featureTags(terms,myText,type){
- return terms.map(t=>`<span class="${featureColor(t,myText,type)}">${esc(t)}</span>`).join(' ');
+  if(!terms.length) return '<span class="featureEmpty">暂无</span>';
+  return terms.map(t=>`<span class="featureTag ${featureColor(t,myText,type)}">${esc(t)}</span>`).join('');
 }
 
 function renderResultTags(id,items,missing=false){const el=$('#'+id);el.innerHTML=items.length?items.map(x=>`<span class="resultTag${missing?' missing':''}">${esc(x)}</span>`).join(''):'<span class="resultEmpty">无</span>'}
