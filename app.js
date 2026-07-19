@@ -208,6 +208,13 @@ function compressImage(file){return new Promise((res,rej)=>{const img=new Image,
 $('#sampleForm').onsubmit=async e=>{e.preventDefault();const existing=await getAll('samples'),order=currentSample?.order||existing.filter(s=>s.batchId===currentBatch.id).length+1;const s={id:currentSample?.id||uid(),batchId:currentBatch.id,order,photo:photoData,name:$('#sampleName').value.trim(),code:$('#sampleCode').value.trim(),company:$('#sampleCompany').value.trim(),myAroma:$('#myAroma').value.trim(),myTaste:$('#myTaste').value.trim(),scores:collectScores(),note:$('#sampleNote').value.trim(),createdAt:currentSample?.createdAt||Date.now(),updatedAt:Date.now()};await put('samples',s);currentSample=s;openBatch(currentBatch.id)};
 $('#deleteSampleBtn').onclick=async()=>{if(currentSample&&confirm('确定删除这个样品吗？')){await del('samples',currentSample.id);openBatch(currentBatch.id)}};
 
+function collectScores(){
+ const read=id=>[...document.querySelectorAll('#'+id+' .scoreRow')].map(row=>({
+   type:row.querySelector('.customType')?.value.trim()||'',
+   score:Number(row.querySelector('.scoreInput')?.value||0)
+ })).filter(x=>x.type);
+ return {aroma:read('aromaScoreList'),taste:read('tasteScoreList')};
+}
 function buildScoreList(){
  const make=(id,type,defaults)=>{
   const box=$('#'+id); if(!box)return;
@@ -217,22 +224,36 @@ function buildScoreList(){
  make('aromaScoreList','aroma',['花香','蜜香','果香']);
  make('tasteScoreList','taste',['厚度','浓度','涩','苦']);
 }
+
 function addScoreRow(id,type='',preset=''){
- const box=$('#'+id);if(!box)return;
- const row=document.createElement('div');row.className='scoreRow';
- const terms=TERMS[id.includes('aroma')?'aroma':'taste'];
- row.innerHTML=`<input class="customType" placeholder="类型（可选择或自定义）" value="${esc(preset)}"><input class="scoreInput" type="number" min="0" max="10" value="0">`;
+ const box=$('#'+id); if(!box)return;
+ const row=document.createElement('div');
+ row.className='scoreRow';
+ row.innerHTML=`<input class="customType" placeholder="类型" value="${esc(preset)}"><input class="scoreInput" type="number" min="0" max="10" value="0">`;
  box.appendChild(row);
 }
+
 function addCustomScore(type){
- const id=type==='aroma'?'aromaScoreList':'tasteScoreList';
- addScoreRow(id,type,'');
+ addScoreRow(type==='aroma'?'aromaScoreList':'tasteScoreList',type,'');
 }
-function collectScores(){
- const read=id=>[...document.querySelectorAll('#'+id+' .scoreRow')].map(r=>({type:(r.querySelector('.customType')?.value.trim()||r.querySelector('select').value),score:Number(r.querySelector('input[type="number"]').value)}));
- return {aroma:read('aromaScoreList'),taste:read('tasteScoreList')};
+
+function makeChips(){
+ for(const box of $$('.chips')){
+  const type=box.dataset.target.toLowerCase().includes('aroma')?'aroma':'taste';
+  box.innerHTML=TERMS[type].map(t=>`<button type="button" class="chip">${t}</button>`).join('');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    const list=box.dataset.target.includes('aroma')?'aromaScoreList':'tasteScoreList';
+    const rows=[...document.querySelectorAll('#'+list+' .scoreRow')];
+    let empty=rows.find(r=>!r.querySelector('.customType').value.trim());
+    if(!empty){ addScoreRow(list,type,b.textContent); }
+    else { empty.querySelector('.customType').value=b.textContent; }
+  });
+ }
 }
-function makeChips(){for(const box of $$('.chips')){const type=box.dataset.target.toLowerCase().includes('aroma')?'aroma':'taste';box.innerHTML=TERMS[type].map(t=>`<button type="button" class="chip">${t}</button>`).join('');box.querySelectorAll('button').forEach(b=>b.onclick=()=>{const ta=$('#'+box.dataset.target),parts=ta.value.split(/[，,、；;\s]+/).filter(Boolean);if(!parts.includes(b.textContent))parts.push(b.textContent);ta.value=parts.join('、')})}}makeChips();
+
+$('#addAromaBtn').onclick=()=>addCustomScore('aroma');
+$('#addTasteBtn').onclick=()=>addCustomScore('taste');
+makeChips();
 async function renderHistory(){const q=$('#searchInput').value.trim().toLowerCase(), bs=await getAll('batches'), ss=(await getAll('samples')).sort((a,b)=>b.createdAt-a.createdAt).filter(s=>!q||[s.name,s.code,s.company,s.myAroma,s.myTaste,s.otherAroma,s.otherTaste,s.note].join(' ').toLowerCase().includes(q));const box=$('#historyList');if(!ss.length){box.className='cards empty';box.textContent='没有匹配记录';return}box.className='cards';box.innerHTML=ss.map(s=>{const b=bs.find(x=>x.id===s.batchId);return `<article class="card" data-hsample="${s.id}" data-hbatch="${s.batchId}">${s.photo?`<img src="${s.photo}">`:'<div style="width:68px;height:68px;border-radius:12px;background:#eee"></div>'}<div class="grow"><h3>${esc(s.name||String(s.order).padStart(2,'0')+'号样品')}</h3><p>${esc(b?.name||'未知批次')} · ${esc(s.company||s.code||'')}</p></div><b>›</b></article>`}).join('');$$('[data-hsample]').forEach(x=>x.onclick=async()=>{await openBatch(x.dataset.hbatch);editSample(x.dataset.hsample)})}
 $('#searchInput').oninput=renderHistory;
 function csvCell(v){return '"'+String(v??'').replace(/"/g,'""')+'"'}
@@ -252,9 +273,3 @@ if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
 $('#addAromaBtn')?.addEventListener('click',()=>addScoreRow('aromaScoreList','aroma'));
 $('#addTasteBtn')?.addEventListener('click',()=>addScoreRow('tasteScoreList','taste'));
 
-document.addEventListener('DOMContentLoaded',()=>{
- const a=document.querySelector('#addAromaBtn');
- const t=document.querySelector('#addTasteBtn');
- if(a)a.onclick=()=>addCustomScore('aroma');
- if(t)t.onclick=()=>addCustomScore('taste');
-});
