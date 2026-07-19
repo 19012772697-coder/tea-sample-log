@@ -39,16 +39,25 @@
 }
 .card .grow{min-width:0}
 
-.scoreList{display:flex;flex-direction:column;gap:8px;margin:8px 0}
-.scoreRow{display:flex;gap:10px;align-items:center}
-.scoreRow select{flex:1;padding:10px;border-radius:10px;border:1px solid #ddd;background:white}
-.scoreRow input{width:70px;padding:10px;border-radius:10px;border:1px solid #ddd;text-align:center}
-.placeholder{width:68px;height:68px;border-radius:12px;background:#eee}
-.sortable .draggable{cursor:grab}
-
-/* V2.1 */
-.score-row{display:flex;align-items:center;gap:10px;margin:8px 0}
-.score-type{flex:1}
-.score-input{width:70px;text-align:center}
-.feature-high{font-weight:700;color:#176b38}
-.drag-placeholder{border:2px dashed #aaa;height:80px;border-radius:16px}
+/* V2.6 评分列表 */
+.score-row{
+ display:grid;
+ grid-template-columns:1fr 80px;
+ gap:12px;
+ align-items:center;
+ margin:10px 0;
+}
+.score-row input{
+ width:100%;
+}
+.score-type{
+ min-height:42px;
+ border-radius:12px;
+}
+.score-value{
+ text-align:center;
+}
+.sample-feature{
+ font-weight:700;
+ line-height:1.8;
+}

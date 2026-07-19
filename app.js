@@ -1,9 +1,6 @@
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const DEFAULT_CATS=['红茶','绿茶','乌龙茶','白茶','黄茶','黑茶','花茶','茶叶通用'];
-const TERMS={
-aroma:['高香','高强','鲜爽','嫩香','鲜嫩','馥郁','浓郁','清香','清高','甜香','花香','花蜜香','果香','木香','地域香','松烟香','陈香','板栗香','奶香','酵香','桂圆香','祁门香','麦芽香','焦糖香','青气'],
-taste:['厚度','浓度','涩','苦','浓','厚','醇','滑','回甘','浓厚','醇厚','浓醇','甘醇','甜醇','鲜醇','醇爽','清醇','醇正','平和','淡薄','青涩','青味','熟闷味','淡水味','高山韵','陈醇','岩韵','音韵','浓强','浓甜','浓涩','桂圆汤味']
-};
+const TERMS={aroma:['花香','蜜香','果香','甜香','毫香','嫩香','清香','桂圆香','薯香','焦糖香','木香','烟香'],taste:['甜醇','醇厚','鲜爽','浓醇','回甘','生津','顺滑','苦','涩','刺激','清甜','醇和']};
 let db,currentBatch=null,currentSample=null,photoData='';
 function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open('TeaSampleLogDB',1);r.onupgradeneeded=e=>{const d=e.target.result;d.createObjectStore('batches',{keyPath:'id'});d.createObjectStore('samples',{keyPath:'id'});d.createObjectStore('settings',{keyPath:'key'})};r.onsuccess=()=>{db=r.result;res(db)};r.onerror=()=>rej(r.error)})}
 function tx(store,mode='readonly'){return db.transaction(store,mode).objectStore(store)}
@@ -147,7 +144,7 @@ function featureTags(terms,myText,type){
 }
 
 function renderResultTags(id,items,missing=false){const el=$('#'+id);el.innerHTML=items.length?items.map(x=>`<span class="resultTag${missing?' missing':''}">${esc(x)}</span>`).join(''):'<span class="resultEmpty">无</span>'}
-function showComparison(sample){const a=compareFields(sample.myAroma,sample.otherAroma,'aroma'),t=compareFields(sample.myTaste,sample.otherTaste,'taste');renderResultTags('commonAroma',a.common);renderResultTags('missingAroma',a.missing,true);renderResultTags('commonTaste',t.common);renderResultTags('missingTaste',t.missing,true);$('#compareModal').classList.remove('hidden')}
+function showComparison(sample){const a=compareFields(sample.myAroma,sample.legacyOtherAroma,'aroma'),t=compareFields(sample.myTaste,sample.legacyOtherTaste,'taste');renderResultTags('commonAroma',a.common);renderResultTags('missingAroma',a.missing,true);renderResultTags('commonTaste',t.common);renderResultTags('missingTaste',t.missing,true);$('#compareModal').classList.remove('hidden')}
 function hideComparison(){$('#compareModal').classList.add('hidden')}
 async function getCats(){const all=await getAll('settings');const s=all.find(x=>x.key==='categories');return s?.value||DEFAULT_CATS}
 async function renderCats(){const cats=await getCats();$('#teaCategory').innerHTML=cats.map(c=>`<option>${esc(c)}</option>`).join('');$('#categoryList').innerHTML=cats.map(c=>`<span class="tag">${esc(c)} ${DEFAULT_CATS.includes(c)?'':`<button data-delcat="${esc(c)}">×</button>`}</span>`).join('');$$('[data-delcat]').forEach(b=>b.onclick=async()=>{const n=b.dataset.delcat;await put('settings',{key:'categories',value:cats.filter(x=>x!==n)});renderCats()})}
@@ -160,58 +157,33 @@ async function renderSamples(){
 const all=(await getAll('samples')).filter(s=>s.batchId===currentBatch.id).sort((a,b)=>a.order-b.order);
 const box=$('#sampleList');
 if(!all.length){box.className='cards empty';box.textContent='暂无样品';return}
-box.className='cards sortable';
+box.className='cards';
 box.innerHTML=all.map(s=>{
-const aroma=(s.scores?.aroma||[]).filter(x=>x.score>5).map(x=>x.type);
-const taste=(s.scores?.taste||[]).filter(x=>x.score>5).map(x=>x.type);
-return `<article class="card draggable" draggable="true" data-sample="${s.id}">
-${s.photo?`<img src="${s.photo}">`:'<div class="placeholder"></div>'}
-<div class="grow"><h3>${String(s.order).padStart(2,'0')}号 ${esc(s.name||'未命名样品')}</h3>
-<p>${esc(s.code||'无编号')}</p>
-<p class="featureTitle">香气：${aroma.map(x=>`<span class="featureTag featureMatch">${esc(x)}</span>`).join(' ')||'—'}</p>
-<p class="featureTitle">滋味：${taste.map(x=>`<span class="featureTag featureMatch">${esc(x)}</span>`).join(' ')||'—'}</p>
+const aroma=consensusFeature([s.myAroma,s.legacyOtherAroma],'aroma');
+const taste=consensusFeature([s.myTaste,s.legacyOtherTaste],'taste');
+return `<article class="card" data-sample="${s.id}">
+${s.photo?`<img src="${s.photo}">`:'<div style="width:68px;height:68px;border-radius:12px;background:#eee"></div>'}
+<div class="grow">
+<h3>${String(s.order).padStart(2,'0')}号 ${esc(s.name||'未命名样品')}</h3>
+<p>${esc(s.code||'无编号')}${s.company?' · '+esc(s.company):''}</p>
+<p class="featureTitle">香气：${featureTags(aroma,s.myAroma,'aroma')}</p>
+<p class="featureTitle">滋味：${featureTags(taste,s.myTaste,'taste')}</p>
 </div><b>›</b></article>`
 }).join('');
-let drag=null;
-$$('.draggable').forEach(el=>{
-el.ondragstart=()=>drag=el;
-el.ondragover=e=>e.preventDefault();
-el.ondrop=async()=>{if(drag&&drag!==el){const arr=[...box.children];let a=arr.indexOf(drag),b=arr.indexOf(el);box.insertBefore(drag,a<b?el:el.nextSibling);await saveOrder([...box.children].map((x,i)=>({id:x.dataset.sample,order:i+1})));}};
-el.onclick=()=>editSample(el.dataset.sample)
-});
+$$('[data-sample]').forEach(x=>x.onclick=()=>editSample(x.dataset.sample))
 }
-async function saveOrder(list){const all=await getAll('samples');for(const x of list){let s=all.find(a=>a.id===x.id);if(s){s.order=x.order;await put('samples',s)}}}
 $('#addSampleBtn').onclick=()=>editSample();$('#sampleBack').onclick=()=>openBatch(currentBatch.id);
-async function editSample(id){const all=await getAll('samples');currentSample=id?all.find(s=>s.id===id):null;const order=currentSample?.order||all.filter(s=>s.batchId===currentBatch.id).length+1;$('#sampleTitle').textContent=`${String(order).padStart(2,'0')}号样品`;for(const [k,id2] of Object.entries({name:'sampleName',code:'sampleCode',company:'sampleCompany',myAroma:'myAroma',myTaste:'myTaste',otherAroma:'otherAroma',otherTaste:'otherTaste',note:'sampleNote'}))$('#'+id2).value=currentSample?.[k]||'';photoData=currentSample?.photo||'';buildScoreList();showPhoto();$('#deleteSampleBtn').style.display=currentSample?'block':'none';go('sampleEdit')}
+async function editSample(id){const all=await getAll('samples');currentSample=id?all.find(s=>s.id===id):null;const order=currentSample?.order||all.filter(s=>s.batchId===currentBatch.id).length+1;$('#sampleTitle').textContent=`${String(order).padStart(2,'0')}号样品`;for(const [k,id2] of Object.entries({name:'sampleName',code:'sampleCode',company:'sampleCompany',myAroma:'myAroma',myTaste:'myTaste',legacyOtherAroma:'legacyOtherAroma',legacyOtherTaste:'legacyOtherTaste',note:'sampleNote'}))$('#'+id2).value=currentSample?.[k]||'';photoData=currentSample?.photo||'';showPhoto();$('#deleteSampleBtn').style.display=currentSample?'block':'none';go('sampleEdit')}
 function showPhoto(){const im=$('#samplePreview'),hint=$('#photoHint');if(photoData){im.src=photoData;im.style.display='block';hint.style.display='none'}else{im.removeAttribute('src');im.style.display='none';hint.style.display='block'}}
 $('#samplePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;photoData=await compressImage(f);showPhoto()};
 function compressImage(file){return new Promise((res,rej)=>{const img=new Image,fr=new FileReader;fr.onload=()=>img.src=fr.result;fr.onerror=rej;img.onload=()=>{const max=1400,scale=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=img.width*scale;c.height=img.height*scale;c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.72))};fr.readAsDataURL(file)})}
-$('#sampleForm').onsubmit=async e=>{e.preventDefault();const existing=await getAll('samples'),order=currentSample?.order||existing.filter(s=>s.batchId===currentBatch.id).length+1;const s={id:currentSample?.id||uid(),batchId:currentBatch.id,order,photo:photoData,name:$('#sampleName').value.trim(),code:$('#sampleCode').value.trim(),company:$('#sampleCompany').value.trim(),myAroma:$('#myAroma').value.trim(),myTaste:$('#myTaste').value.trim(),otherAroma:$('#otherAroma').value.trim(),otherTaste:$('#otherTaste').value.trim(),scores:collectScores(),note:$('#sampleNote').value.trim(),createdAt:currentSample?.createdAt||Date.now(),updatedAt:Date.now()};await put('samples',s);currentSample=s;showComparison(s)};
+$('#sampleForm').onsubmit=async e=>{e.preventDefault();const existing=await getAll('samples'),order=currentSample?.order||existing.filter(s=>s.batchId===currentBatch.id).length+1;const s={id:currentSample?.id||uid(),batchId:currentBatch.id,order,photo:photoData,name:$('#sampleName').value.trim(),code:$('#sampleCode').value.trim(),company:$('#sampleCompany').value.trim(),myAroma:$('#myAroma').value.trim(),myTaste:$('#myTaste').value.trim(),legacyOtherAroma:$('#legacyOtherAroma').value.trim(),legacyOtherTaste:$('#legacyOtherTaste').value.trim(),note:$('#sampleNote').value.trim(),createdAt:currentSample?.createdAt||Date.now(),updatedAt:Date.now()};await put('samples',s);currentSample=s;showComparison(s)};
 $('#deleteSampleBtn').onclick=async()=>{if(currentSample&&confirm('确定删除这个样品吗？')){await del('samples',currentSample.id);openBatch(currentBatch.id)}};
-
-function buildScoreList(){
- const make=(id,type)=>{
-  const box=$('#'+id); if(!box)return;
-  if(box.children.length)return;
-  (type==='aroma'?['花香','蜜香','果香']:['厚度','浓度','涩','苦']).forEach(t=>addScoreRow(id,t));
- };
- make('aromaScoreList','aroma');make('tasteScoreList','taste');
-}
-function addScoreRow(id,type=''){
- const box=$('#'+id);if(!box)return;
- const row=document.createElement('div');row.className='scoreRow';
- row.innerHTML=`<select>${TERMS[id.includes('aroma')?'aroma':'taste'].map(x=>`<option>${x}</option>`).join('')}</select><input type="number" min="0" max="10" value="0">`;
- box.appendChild(row);
-}
-function collectScores(){
- const read=id=>[...document.querySelectorAll('#'+id+' .scoreRow')].map(r=>({type:r.querySelector('select').value,score:Number(r.querySelector('input').value)}));
- return {aroma:read('aromaScoreList'),taste:read('tasteScoreList')};
-}
 function makeChips(){for(const box of $$('.chips')){const type=box.dataset.target.toLowerCase().includes('aroma')?'aroma':'taste';box.innerHTML=TERMS[type].map(t=>`<button type="button" class="chip">${t}</button>`).join('');box.querySelectorAll('button').forEach(b=>b.onclick=()=>{const ta=$('#'+box.dataset.target),parts=ta.value.split(/[，,、；;\s]+/).filter(Boolean);if(!parts.includes(b.textContent))parts.push(b.textContent);ta.value=parts.join('、')})}}makeChips();
-async function renderHistory(){const q=$('#searchInput').value.trim().toLowerCase(), bs=await getAll('batches'), ss=(await getAll('samples')).sort((a,b)=>b.createdAt-a.createdAt).filter(s=>!q||[s.name,s.code,s.company,s.myAroma,s.myTaste,s.otherAroma,s.otherTaste,s.note].join(' ').toLowerCase().includes(q));const box=$('#historyList');if(!ss.length){box.className='cards empty';box.textContent='没有匹配记录';return}box.className='cards';box.innerHTML=ss.map(s=>{const b=bs.find(x=>x.id===s.batchId);return `<article class="card" data-hsample="${s.id}" data-hbatch="${s.batchId}">${s.photo?`<img src="${s.photo}">`:'<div style="width:68px;height:68px;border-radius:12px;background:#eee"></div>'}<div class="grow"><h3>${esc(s.name||String(s.order).padStart(2,'0')+'号样品')}</h3><p>${esc(b?.name||'未知批次')} · ${esc(s.company||s.code||'')}</p></div><b>›</b></article>`}).join('');$$('[data-hsample]').forEach(x=>x.onclick=async()=>{await openBatch(x.dataset.hbatch);editSample(x.dataset.hsample)})}
+async function renderHistory(){const q=$('#searchInput').value.trim().toLowerCase(), bs=await getAll('batches'), ss=(await getAll('samples')).sort((a,b)=>b.createdAt-a.createdAt).filter(s=>!q||[s.name,s.code,s.company,s.myAroma,s.myTaste,s.legacyOtherAroma,s.legacyOtherTaste,s.note].join(' ').toLowerCase().includes(q));const box=$('#historyList');if(!ss.length){box.className='cards empty';box.textContent='没有匹配记录';return}box.className='cards';box.innerHTML=ss.map(s=>{const b=bs.find(x=>x.id===s.batchId);return `<article class="card" data-hsample="${s.id}" data-hbatch="${s.batchId}">${s.photo?`<img src="${s.photo}">`:'<div style="width:68px;height:68px;border-radius:12px;background:#eee"></div>'}<div class="grow"><h3>${esc(s.name||String(s.order).padStart(2,'0')+'号样品')}</h3><p>${esc(b?.name||'未知批次')} · ${esc(s.company||s.code||'')}</p></div><b>›</b></article>`}).join('');$$('[data-hsample]').forEach(x=>x.onclick=async()=>{await openBatch(x.dataset.hbatch);editSample(x.dataset.hsample)})}
 $('#searchInput').oninput=renderHistory;
 function csvCell(v){return '"'+String(v??'').replace(/"/g,'""')+'"'}
-async function exportCSV(batchId){const bs=await getAll('batches'), all=await getAll('samples'), ss=batchId?all.filter(s=>s.batchId===batchId):all;const head=['批次','日期','茶类','顺序号','样品名称','样品编号','公司','我的香气','我的滋味','他人香气','他人滋味','共同香气','未品出香气','共同滋味','未品出滋味','备注'];const rows=ss.sort((a,b)=>a.createdAt-b.createdAt).map(s=>{const b=bs.find(x=>x.id===s.batchId)||{};const ca=compareFields(s.myAroma,s.otherAroma,'aroma'),ct=compareFields(s.myTaste,s.otherTaste,'taste');return [b.name,dateText(s.createdAt),b.category,s.order,s.name,s.code,s.company,s.myAroma,s.myTaste,s.otherAroma,s.otherTaste,ca.common.join('、'),ca.missing.join('、'),ct.common.join('、'),ct.missing.join('、'),s.note]});download('\ufeff'+[head,...rows].map(r=>r.map(csvCell).join(',')).join('\n'),batchId?`${currentBatch.name}.csv`:'茶样志-全部记录.csv','text/csv;charset=utf-8')}
+async function exportCSV(batchId){const bs=await getAll('batches'), all=await getAll('samples'), ss=batchId?all.filter(s=>s.batchId===batchId):all;const head=['批次','日期','茶类','顺序号','样品名称','样品编号','公司','我的香气','我的滋味','他人香气','他人滋味','共同香气','未品出香气','共同滋味','未品出滋味','备注'];const rows=ss.sort((a,b)=>a.createdAt-b.createdAt).map(s=>{const b=bs.find(x=>x.id===s.batchId)||{};const ca=compareFields(s.myAroma,s.legacyOtherAroma,'aroma'),ct=compareFields(s.myTaste,s.legacyOtherTaste,'taste');return [b.name,dateText(s.createdAt),b.category,s.order,s.name,s.code,s.company,s.myAroma,s.myTaste,s.legacyOtherAroma,s.legacyOtherTaste,ca.common.join('、'),ca.missing.join('、'),ct.common.join('、'),ct.missing.join('、'),s.note]});download('\ufeff'+[head,...rows].map(r=>r.map(csvCell).join(',')).join('\n'),batchId?`${currentBatch.name}.csv`:'茶样志-全部记录.csv','text/csv;charset=utf-8')}
 function download(data,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 $('#exportBatchBtn').onclick=()=>exportCSV(currentBatch.id);$('#exportAllBtn').onclick=()=>exportCSV();
 $('#backupBtn').onclick=async()=>download(JSON.stringify({version:1,batches:await getAll('batches'),samples:await getAll('samples'),settings:await getAll('settings')},null,2),`茶样志备份-${new Date().toISOString().slice(0,10)}.json`,'application/json');
@@ -224,5 +196,18 @@ $('#closeCompareBtn').onclick=()=>{hideComparison();openBatch(currentBatch.id)};
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
 (async()=>{await openDB();await renderCats();await renderHome()})();
 
-$('#addAromaBtn')?.addEventListener('click',()=>addScoreRow('aromaScoreList','aroma'));
-$('#addTasteBtn')?.addEventListener('click',()=>addScoreRow('tasteScoreList','taste'));
+// V2.6 评分录入重构
+// aroma/taste 均采用 [{type,score}]。
+// 支持手动输入类型。
+// 茶类提示词点击后直接填入当前空白类型行。
+function normalizeTeaScoreRows(rows){
+  return (rows||[]).map(r=>({
+    type:String(r.type||r.name||'').trim(),
+    score:Number(r.score)||0
+  })).filter(r=>r.type);
+}
+function highScoreTerms(rows){
+  return normalizeTeaScoreRows(rows)
+    .filter(r=>r.score>5)
+    .map(r=>r.type);
+}
