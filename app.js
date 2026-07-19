@@ -201,11 +201,11 @@ $$('.draggable').forEach(el=>{
 }
 async function saveOrder(list){const all=await getAll('samples');for(const x of list){let s=all.find(a=>a.id===x.id);if(s){s.order=x.order;await put('samples',s)}}}
 $('#addSampleBtn').onclick=()=>editSample();$('#sampleBack').onclick=()=>openBatch(currentBatch.id);
-async function editSample(id){const all=await getAll('samples');currentSample=id?all.find(s=>s.id===id):null;const order=currentSample?.order||all.filter(s=>s.batchId===currentBatch.id).length+1;$('#sampleTitle').textContent=`${String(order).padStart(2,'0')}号样品`;for(const [k,id2] of Object.entries({name:'sampleName',code:'sampleCode',company:'sampleCompany',myAroma:'myAroma',myTaste:'myTaste',otherAroma:'otherAroma',otherTaste:'otherTaste',note:'sampleNote'}))$('#'+id2).value=currentSample?.[k]||'';photoData=currentSample?.photo||'';buildScoreList();showPhoto();$('#deleteSampleBtn').style.display=currentSample?'block':'none';go('sampleEdit')}
+async function editSample(id){const all=await getAll('samples');currentSample=id?all.find(s=>s.id===id):null;const order=currentSample?.order||all.filter(s=>s.batchId===currentBatch.id).length+1;$('#sampleTitle').textContent=`${String(order).padStart(2,'0')}号样品`;for(const [k,id2] of Object.entries({name:'sampleName',code:'sampleCode',company:'sampleCompany',myAroma:'myAroma',myTaste:'myTaste',note:'sampleNote'}))$('#'+id2).value=currentSample?.[k]||'';photoData=currentSample?.photo||'';buildScoreList();showPhoto();$('#deleteSampleBtn').style.display=currentSample?'block':'none';go('sampleEdit')}
 function showPhoto(){const im=$('#samplePreview'),hint=$('#photoHint');if(photoData){im.src=photoData;im.style.display='block';hint.style.display='none'}else{im.removeAttribute('src');im.style.display='none';hint.style.display='block'}}
 $('#samplePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;photoData=await compressImage(f);showPhoto()};
 function compressImage(file){return new Promise((res,rej)=>{const img=new Image,fr=new FileReader;fr.onload=()=>img.src=fr.result;fr.onerror=rej;img.onload=()=>{const max=1400,scale=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=img.width*scale;c.height=img.height*scale;c.getContext('2d').drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.72))};fr.readAsDataURL(file)})}
-$('#sampleForm').onsubmit=async e=>{e.preventDefault();const existing=await getAll('samples'),order=currentSample?.order||existing.filter(s=>s.batchId===currentBatch.id).length+1;const s={id:currentSample?.id||uid(),batchId:currentBatch.id,order,photo:photoData,name:$('#sampleName').value.trim(),code:$('#sampleCode').value.trim(),company:$('#sampleCompany').value.trim(),myAroma:$('#myAroma').value.trim(),myTaste:$('#myTaste').value.trim(),otherAroma:$('#otherAroma').value.trim(),otherTaste:$('#otherTaste').value.trim(),scores:collectScores(),note:$('#sampleNote').value.trim(),createdAt:currentSample?.createdAt||Date.now(),updatedAt:Date.now()};await put('samples',s);currentSample=s;showComparison(s)};
+$('#sampleForm').onsubmit=async e=>{e.preventDefault();const existing=await getAll('samples'),order=currentSample?.order||existing.filter(s=>s.batchId===currentBatch.id).length+1;const s={id:currentSample?.id||uid(),batchId:currentBatch.id,order,photo:photoData,name:$('#sampleName').value.trim(),code:$('#sampleCode').value.trim(),company:$('#sampleCompany').value.trim(),myAroma:$('#myAroma').value.trim(),myTaste:$('#myTaste').value.trim(),scores:collectScores(),note:$('#sampleNote').value.trim(),createdAt:currentSample?.createdAt||Date.now(),updatedAt:Date.now()};await put('samples',s);currentSample=s;openBatch(currentBatch.id)};
 $('#deleteSampleBtn').onclick=async()=>{if(currentSample&&confirm('确定删除这个样品吗？')){await del('samples',currentSample.id);openBatch(currentBatch.id)}};
 
 function buildScoreList(){
@@ -221,7 +221,7 @@ function addScoreRow(id,type='',preset=''){
  const box=$('#'+id);if(!box)return;
  const row=document.createElement('div');row.className='scoreRow';
  const terms=TERMS[id.includes('aroma')?'aroma':'taste'];
- row.innerHTML=`<select>${terms.map(x=>`<option ${x===preset?'selected':''}>${x}</option>`).join('')}</select><input class="customType" placeholder="可输入自定义类型" value="${esc(preset)}"><input type="number" min="0" max="10" value="0">`;
+ row.innerHTML=`<input class="customType" placeholder="类型（可选择或自定义）" value="${esc(preset)}"><input class="scoreInput" type="number" min="0" max="10" value="0">`;
  box.appendChild(row);
 }
 function addCustomScore(type){
