@@ -52,3 +52,9 @@
 .score-input{width:70px;text-align:center}
 .feature-high{font-weight:700;color:#176b38}
 .drag-placeholder{border:2px dashed #aaa;height:80px;border-radius:16px}
+
+.dragging{opacity:.6;transform:scale(.98)}
+.scoreRow{display:flex;gap:8px;align-items:center;margin:8px 0}
+.scoreRow select{flex:1}
+.scoreRow .customType{flex:1;padding:8px;border:1px solid #ddd;border-radius:8px}
+.scoreRow input[type=number]{width:70px}

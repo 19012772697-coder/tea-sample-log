@@ -172,12 +172,31 @@ ${s.photo?`<img src="${s.photo}">`:'<div class="placeholder"></div>'}
 <p class="featureTitle">滋味：${taste.map(x=>`<span class="featureTag featureMatch">${esc(x)}</span>`).join(' ')||'—'}</p>
 </div><b>›</b></article>`
 }).join('');
-let drag=null;
+let drag=null, touchStartY=0, touchTarget=null;
+async function reorderFromDOM(){
+ const ids=[...box.children].map(x=>x.dataset.sample);
+ await saveOrder(ids.map((id,i)=>({id,order:i+1})));
+ await renderSamples();
+}
 $$('.draggable').forEach(el=>{
-el.ondragstart=()=>drag=el;
-el.ondragover=e=>e.preventDefault();
-el.ondrop=async()=>{if(drag&&drag!==el){const arr=[...box.children];let a=arr.indexOf(drag),b=arr.indexOf(el);box.insertBefore(drag,a<b?el:el.nextSibling);await saveOrder([...box.children].map((x,i)=>({id:x.dataset.sample,order:i+1})));}};
-el.onclick=()=>editSample(el.dataset.sample)
+ el.ondragstart=()=>drag=el;
+ el.ondragover=e=>e.preventDefault();
+ el.ondrop=async()=>{if(drag&&drag!==el){const arr=[...box.children];let a=arr.indexOf(drag),b=arr.indexOf(el);box.insertBefore(drag,a<b?el:el.nextSibling);await reorderFromDOM();}};
+ // iPhone touch drag
+ el.addEventListener('touchstart',e=>{touchTarget=el;touchStartY=e.touches[0].clientY;el.classList.add('dragging')},{passive:true});
+ el.addEventListener('touchmove',e=>{
+   if(!touchTarget)return;
+   const y=e.touches[0].clientY;
+   const target=document.elementFromPoint(e.touches[0].clientX,y)?.closest('.draggable');
+   if(target&&target!==touchTarget){
+     const rect=target.getBoundingClientRect();
+     if(y<rect.top+rect.height/2) box.insertBefore(touchTarget,target);
+     else box.insertBefore(touchTarget,target.nextSibling);
+   }
+   e.preventDefault();
+ },{passive:false});
+ el.addEventListener('touchend',async()=>{if(touchTarget){touchTarget.classList.remove('dragging');touchTarget=null;await reorderFromDOM();}});
+ el.onclick=()=>editSample(el.dataset.sample)
 });
 }
 async function saveOrder(list){const all=await getAll('samples');for(const x of list){let s=all.find(a=>a.id===x.id);if(s){s.order=x.order;await put('samples',s)}}}
@@ -190,21 +209,27 @@ $('#sampleForm').onsubmit=async e=>{e.preventDefault();const existing=await getA
 $('#deleteSampleBtn').onclick=async()=>{if(currentSample&&confirm('确定删除这个样品吗？')){await del('samples',currentSample.id);openBatch(currentBatch.id)}};
 
 function buildScoreList(){
- const make=(id,type)=>{
+ const make=(id,type,defaults)=>{
   const box=$('#'+id); if(!box)return;
   if(box.children.length)return;
-  (type==='aroma'?['花香','蜜香','果香']:['厚度','浓度','涩','苦']).forEach(t=>addScoreRow(id,t));
+  defaults.forEach(t=>addScoreRow(id,type,t));
  };
- make('aromaScoreList','aroma');make('tasteScoreList','taste');
+ make('aromaScoreList','aroma',['花香','蜜香','果香']);
+ make('tasteScoreList','taste',['厚度','浓度','涩','苦']);
 }
-function addScoreRow(id,type=''){
+function addScoreRow(id,type='',preset=''){
  const box=$('#'+id);if(!box)return;
  const row=document.createElement('div');row.className='scoreRow';
- row.innerHTML=`<select>${TERMS[id.includes('aroma')?'aroma':'taste'].map(x=>`<option>${x}</option>`).join('')}</select><input type="number" min="0" max="10" value="0">`;
+ const terms=TERMS[id.includes('aroma')?'aroma':'taste'];
+ row.innerHTML=`<select>${terms.map(x=>`<option ${x===preset?'selected':''}>${x}</option>`).join('')}</select><input class="customType" placeholder="可输入自定义类型" value="${esc(preset)}"><input type="number" min="0" max="10" value="0">`;
  box.appendChild(row);
 }
+function addCustomScore(type){
+ const id=type==='aroma'?'aromaScoreList':'tasteScoreList';
+ addScoreRow(id,type,'');
+}
 function collectScores(){
- const read=id=>[...document.querySelectorAll('#'+id+' .scoreRow')].map(r=>({type:r.querySelector('select').value,score:Number(r.querySelector('input').value)}));
+ const read=id=>[...document.querySelectorAll('#'+id+' .scoreRow')].map(r=>({type:(r.querySelector('.customType')?.value.trim()||r.querySelector('select').value),score:Number(r.querySelector('input[type="number"]').value)}));
  return {aroma:read('aromaScoreList'),taste:read('tasteScoreList')};
 }
 function makeChips(){for(const box of $$('.chips')){const type=box.dataset.target.toLowerCase().includes('aroma')?'aroma':'taste';box.innerHTML=TERMS[type].map(t=>`<button type="button" class="chip">${t}</button>`).join('');box.querySelectorAll('button').forEach(b=>b.onclick=()=>{const ta=$('#'+box.dataset.target),parts=ta.value.split(/[，,、；;\s]+/).filter(Boolean);if(!parts.includes(b.textContent))parts.push(b.textContent);ta.value=parts.join('、')})}}makeChips();
@@ -226,3 +251,10 @@ if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
 
 $('#addAromaBtn')?.addEventListener('click',()=>addScoreRow('aromaScoreList','aroma'));
 $('#addTasteBtn')?.addEventListener('click',()=>addScoreRow('tasteScoreList','taste'));
+
+document.addEventListener('DOMContentLoaded',()=>{
+ const a=document.querySelector('#addAromaBtn');
+ const t=document.querySelector('#addTasteBtn');
+ if(a)a.onclick=()=>addCustomScore('aroma');
+ if(t)t.onclick=()=>addCustomScore('taste');
+});
